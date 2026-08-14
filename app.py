@@ -1,4 +1,5 @@
 from pathlib import Path
+from datetime import datetime
 import os
 import platform
 import re
@@ -31,6 +32,13 @@ COLORS = {
     "border": "#cbd7e3",
 }
 CHANGELOG = [
+    (
+        "v1.0.4",
+        [
+            "PC Durum Paneli'ne tarih ve saat bilgisi eklendi.",
+            "Sistem raporuna rapor olu\u015fturma zaman\u0131 eklendi.",
+        ],
+    ),
     (
         "v1.0.3",
         [
@@ -392,9 +400,11 @@ def collect_system_info() -> dict[str, str]:
     disk = shutil.disk_usage(Path.home().anchor or "C:\\")
     total_memory, used_memory, memory_load = get_memory_info()
     username = os.environ.get("USERNAME") or os.environ.get("USER") or "Bilinmiyor"
+    now = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
 
     return {
         "Uygulama S\u00fcr\u00fcm\u00fc": read_version(),
+        "Tarih ve Saat": now,
         "Bilgisayar Ad\u0131": platform.node() or "Bilinmiyor",
         "Kullan\u0131c\u0131": username,
         "Windows": platform.platform(),
@@ -491,6 +501,7 @@ def main() -> None:
     metrics_label.grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
 
     metric_names = [
+        "Tarih ve Saat",
         "Bilgisayar Ad\u0131",
         "Kullan\u0131c\u0131",
         "Windows",
