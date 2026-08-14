@@ -1,6 +1,9 @@
 from pathlib import Path
 import os
+import platform
 import re
+import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -16,15 +19,20 @@ VERSION_FILE = Path(__file__).with_name("version.txt")
 LATEST_RELEASE_URL = "https://github.com/yerkoc/testexe/releases/latest"
 DOWNLOAD_URL_TEMPLATE = "https://github.com/yerkoc/testexe/releases/download/v{version}/{asset_name}"
 VERSIONED_EXE_PATTERN = re.compile(r"^TestEXE-(\d+\.\d+\.\d+)\.exe$", re.IGNORECASE)
-NOTES_FILE = Path.home() / "Documents" / "testexe_not.txt"
 CHANGELOG = [
+    (
+        "v1.0.1",
+        [
+            "Uygulama PC Durum Paneli olarak yeniden tasarland\u0131.",
+            "Windows, cihaz, CPU, RAM, disk ve IP bilgileri eklendi.",
+            "Raporu yenileme ve panoya kopyalama kontrolleri eklendi.",
+        ],
+    ),
     (
         "v1.0.0",
         [
-            "Mini not defteri uygulamas\u0131 yay\u0131na haz\u0131r ilk s\u00fcr\u00fcm olarak d\u00fczenlendi.",
-            "Not kaydetme, a\u00e7ma ve temizleme \u00f6zellikleri eklendi.",
-            "Installer tabanl\u0131 g\u00fcncelleme sistemi haz\u0131rland\u0131.",
-            "S\u00fcr\u00fcm g\u00fcnl\u00fc\u011f\u00fc ve \u00f6nceki s\u00fcr\u00fcme d\u00f6n\u00fc\u015f kontrolleri eklendi.",
+            "Installer tabanl\u0131 ilk temiz s\u00fcr\u00fcm yay\u0131nland\u0131.",
+            "G\u00fcncelleme ve \u00f6nceki s\u00fcr\u00fcme d\u00f6n\u00fc\u015f altyap\u0131s\u0131 haz\u0131rland\u0131.",
         ],
     ),
 ]
@@ -278,26 +286,70 @@ def check_for_updates(root: tk.Tk, status_label: ttk.Label) -> None:
         messagebox.showerror(APP_NAME, f"G\u00fcncellemeler kontrol edilemedi:\n{exc}")
 
 
-def save_note(note_text: tk.Text, status_label: ttk.Label) -> None:
-    NOTES_FILE.parent.mkdir(parents=True, exist_ok=True)
-    NOTES_FILE.write_text(note_text.get("1.0", "end-1c"), encoding="utf-8")
-    status_label.config(text=f"Not kaydedildi: {NOTES_FILE}")
+def bytes_to_gb(value: int) -> str:
+    return f"{value / (1024 ** 3):.1f} GB"
 
 
-def open_note(note_text: tk.Text, status_label: ttk.Label) -> None:
-    if not NOTES_FILE.exists():
-        status_label.config(text="Kaydedilmi\u015f not bulunamad\u0131.")
-        messagebox.showinfo(APP_NAME, "Hen\u00fcz kaydedilmi\u015f bir not yok.")
-        return
+def get_memory_info() -> tuple[str, str, str]:
+    if os.name != "nt":
+        return "Bilinmiyor", "Bilinmiyor", "Bilinmiyor"
 
-    note_text.delete("1.0", "end")
-    note_text.insert("1.0", NOTES_FILE.read_text(encoding="utf-8"))
-    status_label.config(text=f"Not a\u00e7\u0131ld\u0131: {NOTES_FILE}")
+    import ctypes
+
+    class MemoryStatus(ctypes.Structure):
+        _fields_ = [
+            ("dwLength", ctypes.c_ulong),
+            ("dwMemoryLoad", ctypes.c_ulong),
+            ("ullTotalPhys", ctypes.c_ulonglong),
+            ("ullAvailPhys", ctypes.c_ulonglong),
+            ("ullTotalPageFile", ctypes.c_ulonglong),
+            ("ullAvailPageFile", ctypes.c_ulonglong),
+            ("ullTotalVirtual", ctypes.c_ulonglong),
+            ("ullAvailVirtual", ctypes.c_ulonglong),
+            ("sullAvailExtendedVirtual", ctypes.c_ulonglong),
+        ]
+
+    memory = MemoryStatus()
+    memory.dwLength = ctypes.sizeof(MemoryStatus)
+    ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(memory))
+    used = memory.ullTotalPhys - memory.ullAvailPhys
+    return bytes_to_gb(memory.ullTotalPhys), bytes_to_gb(used), f"%{memory.dwMemoryLoad}"
 
 
-def clear_note(note_text: tk.Text, status_label: ttk.Label) -> None:
-    note_text.delete("1.0", "end")
-    status_label.config(text="Not alan\u0131 temizlendi.")
+def get_local_ip() -> str:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect(("8.8.8.8", 80))
+            return sock.getsockname()[0]
+    except OSError:
+        return "Bilinmiyor"
+
+
+def collect_system_info() -> dict[str, str]:
+    disk = shutil.disk_usage(Path.home().anchor or "C:\\")
+    total_memory, used_memory, memory_load = get_memory_info()
+    username = os.environ.get("USERNAME") or os.environ.get("USER") or "Bilinmiyor"
+
+    return {
+        "Uygulama S\u00fcr\u00fcm\u00fc": read_version(),
+        "Bilgisayar Ad\u0131": platform.node() or "Bilinmiyor",
+        "Kullan\u0131c\u0131": username,
+        "Windows": platform.platform(),
+        "\u0130\u015flemci": platform.processor() or "Bilinmiyor",
+        "CPU \u00c7ekirdek": str(os.cpu_count() or "Bilinmiyor"),
+        "RAM Toplam": total_memory,
+        "RAM Kullan\u0131m": f"{used_memory} ({memory_load})",
+        "Disk Toplam": bytes_to_gb(disk.total),
+        "Disk Bo\u015f": bytes_to_gb(disk.free),
+        "Yerel IP": get_local_ip(),
+        "Python": platform.python_version(),
+    }
+
+
+def build_report(info: dict[str, str]) -> str:
+    lines = ["Test EXE PC Durum Raporu", ""]
+    lines.extend(f"{key}: {value}" for key, value in info.items())
+    return "\n".join(lines)
 
 
 def changelog_text() -> str:
@@ -309,72 +361,122 @@ def changelog_text() -> str:
     return "\n".join(lines).strip()
 
 
+def set_readonly_text(widget: tk.Text, value: str) -> None:
+    widget.configure(state="normal")
+    widget.delete("1.0", "end")
+    widget.insert("1.0", value)
+    widget.configure(state="disabled")
+
+
+def refresh_dashboard(metrics: dict[str, tk.StringVar], report_box: tk.Text, status_label: ttk.Label) -> None:
+    info = collect_system_info()
+    for key, variable in metrics.items():
+        variable.set(info.get(key, "Bilinmiyor"))
+    set_readonly_text(report_box, build_report(info))
+    status_label.config(text="Sistem bilgileri yenilendi.")
+
+
+def copy_report(root: tk.Tk, report_box: tk.Text, status_label: ttk.Label) -> None:
+    report = report_box.get("1.0", "end-1c")
+    root.clipboard_clear()
+    root.clipboard_append(report)
+    status_label.config(text="Sistem raporu panoya kopyaland\u0131.")
+
+
 def main() -> None:
     root = tk.Tk()
-    root.title(f"{APP_NAME} Not Defteri")
-    root.geometry("760x520")
-    root.minsize(720, 480)
+    root.title(f"{APP_NAME} PC Durum Paneli")
+    root.geometry("860x560")
+    root.minsize(800, 520)
 
-    root.columnconfigure(0, weight=3)
-    root.columnconfigure(1, weight=2)
+    root.columnconfigure(0, weight=2)
+    root.columnconfigure(1, weight=3)
     root.rowconfigure(1, weight=1)
 
     header = ttk.Frame(root, padding=(16, 14, 16, 8))
     header.grid(row=0, column=0, columnspan=2, sticky="ew")
     header.columnconfigure(0, weight=1)
 
-    title = ttk.Label(header, text="Test EXE Not Defteri", font=("Segoe UI", 18, "bold"))
+    title = ttk.Label(header, text="Test EXE PC Durum Paneli", font=("Segoe UI", 18, "bold"))
     title.grid(row=0, column=0, sticky="w")
 
     version = ttk.Label(header, text=f"S\u00fcr\u00fcm: {read_version()}", font=("Segoe UI", 10))
     version.grid(row=0, column=1, sticky="e")
 
-    note_frame = ttk.Frame(root, padding=(16, 8, 8, 8))
-    note_frame.grid(row=1, column=0, sticky="nsew")
-    note_frame.columnconfigure(0, weight=1)
-    note_frame.rowconfigure(1, weight=1)
+    metrics_frame = ttk.Frame(root, padding=(16, 8, 8, 8))
+    metrics_frame.grid(row=1, column=0, sticky="nsew")
+    metrics_frame.columnconfigure(1, weight=1)
 
-    note_label = ttk.Label(note_frame, text="Notlar", font=("Segoe UI", 11, "bold"))
-    note_label.grid(row=0, column=0, sticky="w", pady=(0, 6))
+    metrics_label = ttk.Label(metrics_frame, text="Canl\u0131 Sistem Bilgileri", font=("Segoe UI", 11, "bold"))
+    metrics_label.grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
 
-    note_text = tk.Text(note_frame, wrap="word", undo=True, font=("Segoe UI", 10), height=12)
-    note_text.grid(row=1, column=0, sticky="nsew")
+    metric_names = [
+        "Bilgisayar Ad\u0131",
+        "Kullan\u0131c\u0131",
+        "Windows",
+        "\u0130\u015flemci",
+        "CPU \u00c7ekirdek",
+        "RAM Toplam",
+        "RAM Kullan\u0131m",
+        "Disk Toplam",
+        "Disk Bo\u015f",
+        "Yerel IP",
+    ]
+    metrics: dict[str, tk.StringVar] = {}
+    for row, name in enumerate(metric_names, start=1):
+        ttk.Label(metrics_frame, text=f"{name}:", font=("Segoe UI", 9, "bold")).grid(
+            row=row, column=0, sticky="nw", pady=4, padx=(0, 8)
+        )
+        value = tk.StringVar(value="Y\u00fckleniyor...")
+        metrics[name] = value
+        ttk.Label(metrics_frame, textvariable=value, wraplength=280).grid(row=row, column=1, sticky="ew", pady=4)
 
-    note_scroll = ttk.Scrollbar(note_frame, command=note_text.yview)
-    note_scroll.grid(row=1, column=1, sticky="ns")
-    note_text.configure(yscrollcommand=note_scroll.set)
+    detail_frame = ttk.Frame(root, padding=(8, 8, 16, 8))
+    detail_frame.grid(row=1, column=1, sticky="nsew")
+    detail_frame.columnconfigure(0, weight=1)
+    detail_frame.rowconfigure(1, weight=2)
+    detail_frame.rowconfigure(4, weight=1)
 
-    note_buttons = ttk.Frame(note_frame)
-    note_buttons.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+    report_label = ttk.Label(detail_frame, text="Sistem Raporu", font=("Segoe UI", 11, "bold"))
+    report_label.grid(row=0, column=0, sticky="w", pady=(0, 6))
 
-    side_frame = ttk.Frame(root, padding=(8, 8, 16, 8))
-    side_frame.grid(row=1, column=1, sticky="nsew")
-    side_frame.columnconfigure(0, weight=1)
-    side_frame.rowconfigure(1, weight=1)
+    report_box = tk.Text(detail_frame, wrap="word", font=("Consolas", 9), height=12)
+    report_box.grid(row=1, column=0, sticky="nsew")
+    report_box.configure(state="disabled")
 
-    changelog_label = ttk.Label(side_frame, text="S\u00fcr\u00fcm G\u00fcnl\u00fc\u011f\u00fc", font=("Segoe UI", 11, "bold"))
-    changelog_label.grid(row=0, column=0, sticky="w", pady=(0, 6))
+    report_scroll = ttk.Scrollbar(detail_frame, command=report_box.yview)
+    report_scroll.grid(row=1, column=1, sticky="ns")
+    report_box.configure(yscrollcommand=report_scroll.set)
 
-    changelog = tk.Text(side_frame, wrap="word", font=("Segoe UI", 9), height=12)
-    changelog.grid(row=1, column=0, sticky="nsew")
+    changelog_label = ttk.Label(detail_frame, text="S\u00fcr\u00fcm G\u00fcnl\u00fc\u011f\u00fc", font=("Segoe UI", 11, "bold"))
+    changelog_label.grid(row=3, column=0, sticky="w", pady=(14, 6))
+
+    changelog = tk.Text(detail_frame, wrap="word", font=("Segoe UI", 9), height=8)
+    changelog.grid(row=4, column=0, sticky="nsew")
     changelog.insert("1.0", changelog_text())
     changelog.configure(state="disabled")
 
-    changelog_scroll = ttk.Scrollbar(side_frame, command=changelog.yview)
-    changelog_scroll.grid(row=1, column=1, sticky="ns")
+    changelog_scroll = ttk.Scrollbar(detail_frame, command=changelog.yview)
+    changelog_scroll.grid(row=4, column=1, sticky="ns")
     changelog.configure(yscrollcommand=changelog_scroll.set)
 
-    status = ttk.Label(root, text="Mini not defteri haz\u0131r.", font=("Segoe UI", 9), padding=(16, 6))
+    status = ttk.Label(root, text="PC Durum Paneli haz\u0131r.", font=("Segoe UI", 9), padding=(16, 6))
     status.grid(row=3, column=0, columnspan=2, sticky="ew")
-
-    ttk.Button(note_buttons, text="Kaydet", command=lambda: save_note(note_text, status)).pack(side="left", padx=(0, 8))
-    ttk.Button(note_buttons, text="A\u00e7", command=lambda: open_note(note_text, status)).pack(side="left", padx=(0, 8))
-    ttk.Button(note_buttons, text="Temizle", command=lambda: clear_note(note_text, status)).pack(side="left")
 
     app_buttons = ttk.Frame(root, padding=(16, 4, 16, 14))
     app_buttons.grid(row=2, column=0, columnspan=2, sticky="ew")
     app_buttons.columnconfigure(0, weight=1)
 
+    ttk.Button(
+        app_buttons,
+        text="Yenile",
+        command=lambda: refresh_dashboard(metrics, report_box, status),
+    ).pack(side="left", padx=(0, 8))
+    ttk.Button(
+        app_buttons,
+        text="Raporu kopyala",
+        command=lambda: copy_report(root, report_box, status),
+    ).pack(side="left", padx=(0, 8))
     ttk.Button(
         app_buttons,
         text="G\u00fcncellemeleri kontrol et",
@@ -386,6 +488,8 @@ def main() -> None:
         command=lambda: rollback_to_previous_version(root, status),
     ).pack(side="left", padx=(0, 8))
     ttk.Button(app_buttons, text="Kapat", command=root.destroy).pack(side="right")
+
+    refresh_dashboard(metrics, report_box, status)
 
     root.mainloop()
 
