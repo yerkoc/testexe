@@ -7,6 +7,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import tkinter as tk
 from tkinter import messagebox
 from tkinter import ttk
@@ -30,6 +31,13 @@ COLORS = {
     "border": "#cbd7e3",
 }
 CHANGELOG = [
+    (
+        "v1.0.3",
+        [
+            "Uygulama a\u00e7\u0131l\u0131\u015f\u0131nda yeni s\u00fcr\u00fcm kontrol\u00fc eklendi.",
+            "Yeni s\u00fcr\u00fcm varsa kullan\u0131c\u0131ya k\u00fc\u00e7\u00fck kurulum uyar\u0131s\u0131 g\u00f6steriliyor.",
+        ],
+    ),
     (
         "v1.0.2",
         [
@@ -303,6 +311,44 @@ def check_for_updates(root: tk.Tk, status_label: ttk.Label) -> None:
         messagebox.showerror(APP_NAME, f"G\u00fcncellemeler kontrol edilemedi:\n{exc}")
 
 
+def prompt_update_install(root: tk.Tk, status_label: ttk.Label, latest_version: str) -> None:
+    answer = messagebox.askyesno(
+        APP_NAME,
+        f"Yeni s\u00fcr\u00fcm mevcut: {latest_version}\n\n\u015eimdi indirip kurmak ister misin?",
+    )
+    if not answer:
+        status_label.config(text=f"Yeni s\u00fcr\u00fcm mevcut: {latest_version}")
+        return
+
+    status_label.config(text=f"{latest_version} s\u00fcr\u00fcm\u00fc indiriliyor...")
+    root.update_idletasks()
+
+    try:
+        asset_name, download_url = build_asset_url(latest_version, setup=True)
+        target_path = Path(tempfile.gettempdir()) / asset_name
+        download_file(download_url, target_path)
+        launch_installer_and_exit(target_path)
+    except (HTTPError, ValueError, URLError, RuntimeError) as exc:
+        status_label.config(text="G\u00fcncelleme indirilemedi.")
+        messagebox.showerror(APP_NAME, f"G\u00fcncelleme indirilemedi:\n{exc}")
+
+
+def check_for_updates_on_startup(root: tk.Tk, status_label: ttk.Label) -> None:
+    def worker() -> None:
+        try:
+            current_version = read_version()
+            latest_version = fetch_latest_version()
+            if parse_version(latest_version) > parse_version(current_version):
+                root.after(0, lambda: prompt_update_install(root, status_label, latest_version))
+            else:
+                root.after(0, lambda: status_label.config(text="A\u00e7\u0131l\u0131\u015fta g\u00fcncelleme bulunamad\u0131."))
+        except (HTTPError, ValueError, URLError, RuntimeError):
+            root.after(0, lambda: status_label.config(text="A\u00e7\u0131l\u0131\u015fta g\u00fcncelleme kontrol\u00fc yap\u0131lamad\u0131."))
+
+    status_label.config(text="A\u00e7\u0131l\u0131\u015fta g\u00fcncelleme kontrol ediliyor...")
+    threading.Thread(target=worker, daemon=True).start()
+
+
 def bytes_to_gb(value: int) -> str:
     return f"{value / (1024 ** 3):.1f} GB"
 
@@ -549,6 +595,7 @@ def main() -> None:
     ttk.Button(app_buttons, text="Kapat", command=root.destroy).pack(side="right")
 
     refresh_dashboard(metrics, report_box, status)
+    root.after(1500, lambda: check_for_updates_on_startup(root, status))
 
     root.mainloop()
 
