@@ -19,7 +19,24 @@ VERSION_FILE = Path(__file__).with_name("version.txt")
 LATEST_RELEASE_URL = "https://github.com/yerkoc/testexe/releases/latest"
 DOWNLOAD_URL_TEMPLATE = "https://github.com/yerkoc/testexe/releases/download/v{version}/{asset_name}"
 VERSIONED_EXE_PATTERN = re.compile(r"^TestEXE-(\d+\.\d+\.\d+)\.exe$", re.IGNORECASE)
+COLORS = {
+    "bg": "#e8eef5",
+    "panel": "#f8fafc",
+    "panel_alt": "#eef4f8",
+    "text": "#17212f",
+    "muted": "#526173",
+    "accent": "#176b87",
+    "accent_dark": "#0f4f63",
+    "border": "#cbd7e3",
+}
 CHANGELOG = [
+    (
+        "v1.0.2",
+        [
+            "PC Durum Paneli arka plan ve panel renkleri yenilendi.",
+            "Ba\u015fl\u0131k, durum \u00e7ubu\u011fu ve rapor alanlar\u0131 daha okunur hale getirildi.",
+        ],
+    ),
     (
         "v1.0.1",
         [
@@ -388,26 +405,43 @@ def main() -> None:
     root.title(f"{APP_NAME} PC Durum Paneli")
     root.geometry("860x560")
     root.minsize(800, 520)
+    root.configure(bg=COLORS["bg"])
+
+    style = ttk.Style(root)
+    style.theme_use("clam")
+    style.configure(".", font=("Segoe UI", 9), background=COLORS["bg"], foreground=COLORS["text"])
+    style.configure("App.TFrame", background=COLORS["bg"])
+    style.configure("Panel.TFrame", background=COLORS["panel"], bordercolor=COLORS["border"], relief="solid")
+    style.configure("Header.TFrame", background=COLORS["accent"])
+    style.configure("Footer.TFrame", background=COLORS["bg"])
+    style.configure("HeaderTitle.TLabel", background=COLORS["accent"], foreground="#ffffff", font=("Segoe UI", 18, "bold"))
+    style.configure("HeaderVersion.TLabel", background=COLORS["accent"], foreground="#e8f4f8", font=("Segoe UI", 10))
+    style.configure("Section.TLabel", background=COLORS["panel"], foreground=COLORS["accent_dark"], font=("Segoe UI", 11, "bold"))
+    style.configure("MetricName.TLabel", background=COLORS["panel"], foreground=COLORS["muted"], font=("Segoe UI", 9, "bold"))
+    style.configure("MetricValue.TLabel", background=COLORS["panel"], foreground=COLORS["text"])
+    style.configure("Status.TLabel", background=COLORS["panel_alt"], foreground=COLORS["muted"], padding=(16, 7))
+    style.configure("TButton", padding=(10, 6))
+    style.map("TButton", background=[("active", "#dbe8ef")])
 
     root.columnconfigure(0, weight=2)
     root.columnconfigure(1, weight=3)
     root.rowconfigure(1, weight=1)
 
-    header = ttk.Frame(root, padding=(16, 14, 16, 8))
+    header = ttk.Frame(root, padding=(18, 16, 18, 14), style="Header.TFrame")
     header.grid(row=0, column=0, columnspan=2, sticky="ew")
     header.columnconfigure(0, weight=1)
 
-    title = ttk.Label(header, text="Test EXE PC Durum Paneli", font=("Segoe UI", 18, "bold"))
+    title = ttk.Label(header, text="Test EXE PC Durum Paneli", style="HeaderTitle.TLabel")
     title.grid(row=0, column=0, sticky="w")
 
-    version = ttk.Label(header, text=f"S\u00fcr\u00fcm: {read_version()}", font=("Segoe UI", 10))
+    version = ttk.Label(header, text=f"S\u00fcr\u00fcm: {read_version()}", style="HeaderVersion.TLabel")
     version.grid(row=0, column=1, sticky="e")
 
-    metrics_frame = ttk.Frame(root, padding=(16, 8, 8, 8))
-    metrics_frame.grid(row=1, column=0, sticky="nsew")
+    metrics_frame = ttk.Frame(root, padding=(18, 16, 14, 16), style="Panel.TFrame")
+    metrics_frame.grid(row=1, column=0, sticky="nsew", padx=(16, 8), pady=16)
     metrics_frame.columnconfigure(1, weight=1)
 
-    metrics_label = ttk.Label(metrics_frame, text="Canl\u0131 Sistem Bilgileri", font=("Segoe UI", 11, "bold"))
+    metrics_label = ttk.Label(metrics_frame, text="Canl\u0131 Sistem Bilgileri", style="Section.TLabel")
     metrics_label.grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
 
     metric_names = [
@@ -424,23 +458,37 @@ def main() -> None:
     ]
     metrics: dict[str, tk.StringVar] = {}
     for row, name in enumerate(metric_names, start=1):
-        ttk.Label(metrics_frame, text=f"{name}:", font=("Segoe UI", 9, "bold")).grid(
+        ttk.Label(metrics_frame, text=f"{name}:", style="MetricName.TLabel").grid(
             row=row, column=0, sticky="nw", pady=4, padx=(0, 8)
         )
         value = tk.StringVar(value="Y\u00fckleniyor...")
         metrics[name] = value
-        ttk.Label(metrics_frame, textvariable=value, wraplength=280).grid(row=row, column=1, sticky="ew", pady=4)
+        ttk.Label(metrics_frame, textvariable=value, wraplength=280, style="MetricValue.TLabel").grid(
+            row=row, column=1, sticky="ew", pady=4
+        )
 
-    detail_frame = ttk.Frame(root, padding=(8, 8, 16, 8))
-    detail_frame.grid(row=1, column=1, sticky="nsew")
+    detail_frame = ttk.Frame(root, padding=(16, 16, 18, 16), style="Panel.TFrame")
+    detail_frame.grid(row=1, column=1, sticky="nsew", padx=(8, 16), pady=16)
     detail_frame.columnconfigure(0, weight=1)
     detail_frame.rowconfigure(1, weight=2)
     detail_frame.rowconfigure(4, weight=1)
 
-    report_label = ttk.Label(detail_frame, text="Sistem Raporu", font=("Segoe UI", 11, "bold"))
+    report_label = ttk.Label(detail_frame, text="Sistem Raporu", style="Section.TLabel")
     report_label.grid(row=0, column=0, sticky="w", pady=(0, 6))
 
-    report_box = tk.Text(detail_frame, wrap="word", font=("Consolas", 9), height=12)
+    report_box = tk.Text(
+        detail_frame,
+        wrap="word",
+        font=("Consolas", 9),
+        height=12,
+        bg="#fbfdff",
+        fg=COLORS["text"],
+        relief="solid",
+        bd=1,
+        highlightthickness=1,
+        highlightbackground=COLORS["border"],
+        insertbackground=COLORS["accent"],
+    )
     report_box.grid(row=1, column=0, sticky="nsew")
     report_box.configure(state="disabled")
 
@@ -448,10 +496,21 @@ def main() -> None:
     report_scroll.grid(row=1, column=1, sticky="ns")
     report_box.configure(yscrollcommand=report_scroll.set)
 
-    changelog_label = ttk.Label(detail_frame, text="S\u00fcr\u00fcm G\u00fcnl\u00fc\u011f\u00fc", font=("Segoe UI", 11, "bold"))
+    changelog_label = ttk.Label(detail_frame, text="S\u00fcr\u00fcm G\u00fcnl\u00fc\u011f\u00fc", style="Section.TLabel")
     changelog_label.grid(row=3, column=0, sticky="w", pady=(14, 6))
 
-    changelog = tk.Text(detail_frame, wrap="word", font=("Segoe UI", 9), height=8)
+    changelog = tk.Text(
+        detail_frame,
+        wrap="word",
+        font=("Segoe UI", 9),
+        height=8,
+        bg="#fbfdff",
+        fg=COLORS["text"],
+        relief="solid",
+        bd=1,
+        highlightthickness=1,
+        highlightbackground=COLORS["border"],
+    )
     changelog.grid(row=4, column=0, sticky="nsew")
     changelog.insert("1.0", changelog_text())
     changelog.configure(state="disabled")
@@ -460,10 +519,10 @@ def main() -> None:
     changelog_scroll.grid(row=4, column=1, sticky="ns")
     changelog.configure(yscrollcommand=changelog_scroll.set)
 
-    status = ttk.Label(root, text="PC Durum Paneli haz\u0131r.", font=("Segoe UI", 9), padding=(16, 6))
-    status.grid(row=3, column=0, columnspan=2, sticky="ew")
+    status = ttk.Label(root, text="PC Durum Paneli haz\u0131r.", style="Status.TLabel")
+    status.grid(row=3, column=0, columnspan=2, sticky="ew", padx=16, pady=(0, 14))
 
-    app_buttons = ttk.Frame(root, padding=(16, 4, 16, 14))
+    app_buttons = ttk.Frame(root, padding=(16, 0, 16, 0), style="Footer.TFrame")
     app_buttons.grid(row=2, column=0, columnspan=2, sticky="ew")
     app_buttons.columnconfigure(0, weight=1)
 
