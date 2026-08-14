@@ -1,0 +1,83 @@
+name: Windows EXE ve installer derle
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Depoyu indir
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Python kur
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Bagimliliklari kur
+        run: pip install -r requirements.txt
+
+      - name: Sonraki surumu hesapla
+        id: version
+        shell: pwsh
+        run: |
+          $latestTag = git tag --list "v*" --sort=-v:refname | Select-Object -First 1
+          if (-not $latestTag) {
+            $version = (Get-Content version.txt).Trim()
+          } else {
+            $baseVersion = $latestTag.TrimStart("v")
+            $parts = $baseVersion.Split(".")
+            $major = [int]$parts[0]
+            $minor = [int]$parts[1]
+            $patch = [int]$parts[2] + 1
+            $version = "$major.$minor.$patch"
+          }
+
+          $tag = "v$version"
+
+          "VERSION = `"$version`"" | Out-File -FilePath build_version.py -Encoding utf8
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+
+      - name: EXE dosyasini derle
+        shell: pwsh
+        run: |
+          pyinstaller --onefile --windowed --name TestEXE app.py
+          Copy-Item "dist/TestEXE.exe" "dist/TestEXE-${{ steps.version.outputs.version }}.exe" -Force
+
+      - name: Inno Setup kur
+        run: choco install innosetup --no-progress -y
+
+      - name: Installer dosyasini derle
+        shell: pwsh
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss /DMyAppVersion=${{ steps.version.outputs.version }}
+
+      - name: Derleme ciktilarini yukle
+        uses: actions/upload-artifact@v4
+        with:
+          name: TestEXE-${{ steps.version.outputs.version }}
+          path: |
+            dist/TestEXE-${{ steps.version.outputs.version }}.exe
+            dist/TestEXE-Setup-${{ steps.version.outputs.version }}.exe
+
+      - name: GitHub surumu olustur
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.version.outputs.tag }}" `
+            "dist/TestEXE-${{ steps.version.outputs.version }}.exe" `
+            "dist/TestEXE-Setup-${{ steps.version.outputs.version }}.exe" `
+            --title "TestEXE ${{ steps.version.outputs.tag }}" `
+            --notes "Bu surum ${{ github.sha }} commitinden otomatik olarak olusturuldu."

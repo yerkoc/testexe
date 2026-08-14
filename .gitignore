@@ -1,0 +1,7 @@
+__pycache__/
+build/
+dist/
+*.spec
+.venv/
+build_version.py
+TestEXE_Otomatik_Guncelleme_Dokumani.docx
